@@ -1,0 +1,17 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Scores are append-only. The app never reads or changes old entries.
+    match /scores/{scoreId} {
+      allow create: if request.resource.data.score is int
+                    && request.resource.data.totalQuestions is int
+                    && request.resource.data.totalQuestions == 5
+                    && request.resource.data.score >= 0
+                    && request.resource.data.score <= request.resource.data.totalQuestions
+                    && request.resource.data.roundId is int
+                    && request.resource.data.submittedAt is timestamp;
+      allow read, update, delete: if false;
+    }
+  }
+}
