@@ -25,7 +25,7 @@ void main() {
   ) async {
     await tester.pumpWidget(const TriviaShowdownApp());
 
-    expect(find.text('Cloud Trivia Showdown: API Edition'), findsOneWidget);
+    expect(find.text('Trivia'), findsOneWidget);
     expect(find.text('Fetching live questions...'), findsOneWidget);
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
 

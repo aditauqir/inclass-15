@@ -1,10 +1,22 @@
 import 'dart:convert';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 
-void main() {
+import 'firebase_options.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+  } catch (e) {
+    debugPrint('Firebase initialization failed: $e');
+  }
   runApp(const TriviaShowdownApp());
 }
 
@@ -27,7 +39,7 @@ class TriviaShowdownApp extends StatelessWidget {
           backgroundColor: Colors.white,
           elevation: 0,
           scrolledUnderElevation: 0,
-          centerTitle: false,
+          centerTitle: true,
         ),
       ),
       home: const TriviaShowdownScreen(),
@@ -103,7 +115,8 @@ class _TriviaShowdownScreenState extends State<TriviaShowdownScreen> {
   bool _isSynced = false;
   bool _isSyncing = false;
   int _roundId = 0;
-  Map<String, Object>? _lastPayload;
+  String _syncError = '';
+  String _syncedDocId = '';
   @override
   void initState() {
     super.initState();
@@ -187,30 +200,60 @@ class _TriviaShowdownScreenState extends State<TriviaShowdownScreen> {
       'roundId': roundId,
       'score': _score,
       'totalQuestions': _questions.length,
-      'submittedAt': DateTime.now().toUtc().toIso8601String(),
+      'submittedAt': FieldValue.serverTimestamp(),
+      'source': 'inclass15',
     };
     setState(() {
       _isSyncing = true;
+      _syncError = '';
     });
-    await Future.delayed(const Duration(seconds: 1));
-    if (!mounted || roundId != _roundId) return;
-    setState(() {
-      _isSyncing = false;
-      _isSynced = true;
-      _lastPayload = payload;
-    });
-    debugPrint('Simulated submission payload (not sent): $payload');
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Simulated sync complete; no backend request was sent.',
-          style: GoogleFonts.outfit(color: Colors.white),
+    try {
+      if (Firebase.apps.isEmpty) {
+        throw StateError('Firebase is not initialized.');
+      }
+      final reference = await FirebaseFirestore.instance
+          .collection('scores')
+          .add(payload);
+      if (!mounted || roundId != _roundId) return;
+      setState(() {
+        _isSyncing = false;
+        _isSynced = true;
+        _syncedDocId = reference.id;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Score synced to the cloud.',
+            style: GoogleFonts.outfit(color: Colors.white),
+          ),
+          backgroundColor: Colors.black87,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
         ),
-        backgroundColor: Colors.black87,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
-    );
+      );
+    } catch (e) {
+      debugPrint('Cloud sync failed: $e');
+      if (!mounted || roundId != _roundId) return;
+      setState(() {
+        _isSyncing = false;
+        _syncError = 'Sync failed. Check your connection and try again.';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Sync failed. Check your connection and try again.',
+            style: GoogleFonts.outfit(color: Colors.white),
+          ),
+          backgroundColor: Colors.red.shade700,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+      );
+    }
   }
 
   void _restart() {
@@ -223,7 +266,8 @@ class _TriviaShowdownScreenState extends State<TriviaShowdownScreen> {
       _selectedOption = null;
       _isSynced = false;
       _isSyncing = false;
-      _lastPayload = null;
+      _syncError = '';
+      _syncedDocId = '';
     });
     _loadTriviaData();
   }
@@ -541,12 +585,8 @@ class _TriviaShowdownScreenState extends State<TriviaShowdownScreen> {
             ),
           ),
           const SizedBox(height: 28),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 26),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFAF8FD),
-              borderRadius: BorderRadius.circular(20),
-            ),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
             child: Column(
               children: [
                 Text('FINAL SCORE', style: _labelStyle()),
@@ -575,6 +615,36 @@ class _TriviaShowdownScreenState extends State<TriviaShowdownScreen> {
             ),
           ),
           const SizedBox(height: 20),
+          if (_syncError.isNotEmpty) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                border: Border.all(color: Colors.red.shade200),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.cloud_off_outlined,
+                    color: Colors.red.shade600,
+                    size: 22,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      _syncError,
+                      style: GoogleFonts.outfit(
+                        fontSize: 13,
+                        color: Colors.red.shade700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
           if (!_isSynced)
             SizedBox(
               width: double.infinity,
@@ -602,7 +672,7 @@ class _TriviaShowdownScreenState extends State<TriviaShowdownScreen> {
                       )
                     : const Icon(Icons.cloud_upload_outlined, size: 20),
                 label: Text(
-                  _isSyncing ? 'Simulating sync...' : 'Simulate Score Sync',
+                  _isSyncing ? 'Syncing...' : 'Sync with Cloud',
                   style: GoogleFonts.outfit(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
@@ -631,7 +701,7 @@ class _TriviaShowdownScreenState extends State<TriviaShowdownScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Sync Simulation Complete',
+                          'Score Synced to Cloud',
                           style: GoogleFonts.outfit(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
@@ -640,22 +710,22 @@ class _TriviaShowdownScreenState extends State<TriviaShowdownScreen> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          'No backend request was sent.',
+                          'Your score is saved in the leaderboard.',
                           style: GoogleFonts.outfit(
                             fontSize: 12,
                             color: Colors.green.shade800,
                           ),
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Payload ready · '
-                          '{"score": ${_lastPayload?['score'] ?? _score}, '
-                          '"total": ${_lastPayload?['totalQuestions'] ?? _questions.length}}',
-                          style: GoogleFonts.outfit(
-                            fontSize: 11,
-                            color: Colors.green.shade700,
+                        if (_syncedDocId.isNotEmpty) ...[
+                          const SizedBox(height: 3),
+                          Text(
+                            'Entry: $_syncedDocId',
+                            style: GoogleFonts.outfit(
+                              fontSize: 11,
+                              color: Colors.green.shade700,
+                            ),
                           ),
-                        ),
+                        ],
                       ],
                     ),
                   ),
@@ -673,17 +743,6 @@ class _TriviaShowdownScreenState extends State<TriviaShowdownScreen> {
                 fontWeight: FontWeight.w500,
                 color: Colors.black87,
               ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'Demo only: this screen simulates the cloud write. A real submission '
-            'would send the score to an endpoint and await its response.',
-            textAlign: TextAlign.center,
-            style: GoogleFonts.outfit(
-              fontSize: 11,
-              height: 1.4,
-              color: Colors.grey.shade500,
             ),
           ),
           const SizedBox(height: 24),
@@ -705,7 +764,7 @@ class _TriviaShowdownScreenState extends State<TriviaShowdownScreen> {
       backgroundColor: Colors.white,
       appBar: AppBar(
         title: Text(
-          'Cloud Trivia Showdown: API Edition',
+          'Trivia',
           style: GoogleFonts.outfit(
             fontSize: 18,
             fontWeight: FontWeight.normal,
