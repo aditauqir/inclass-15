@@ -1,0 +1,22 @@
+{
+  "name": "projects/inclass-15-mad/databases/(default)/documents/scores/jHqYImEo6QrCo16yICKm",
+  "fields": {
+    "roundId": {
+      "integerValue": "0"
+    },
+    "submittedAt": {
+      "timestampValue": "2026-11-12T00:18:15.510Z"
+    },
+    "score": {
+      "integerValue": "1"
+    },
+    "totalQuestions": {
+      "integerValue": "5"
+    },
+    "source": {
+      "stringValue": "inclass15"
+    }
+  },
+  "createTime": "2026-11-12T00:18:15.571437Z",
+  "updateTime": "2026-11-12T00:18:15.571437Z"
+}
